@@ -6,6 +6,7 @@ Website: [mikeoss.com](https://mikeoss.com)
 
 ## Contents
 
+
 - `frontend/` - Next.js application
 - `backend/` - Express API, Supabase access, document processing, and database schema
 - `backend/schema.sql` - Supabase schema for fresh databases
