@@ -1153,8 +1153,9 @@ export async function resolveTrackedChange(
 // ---------------------------------------------------------------------------
 
 function ensureXmlDeclaration(xml: string): string {
-    if (xml.startsWith("<?xml")) return xml;
-    return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n${xml}`;
+    const stripped = xml.charCodeAt(0) === 0xFEFF ? xml.slice(1) : xml;
+    if (stripped.startsWith("<?xml")) return stripped;
+    return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n${stripped}`;
 }
 
 function truncate(s: string, n: number): string {
