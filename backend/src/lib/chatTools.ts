@@ -41,6 +41,16 @@ import {
   type CompaniesHouseToolEvent,
 } from "./legalSourcesTools/companiesHouseTools";
 import {
+  searchLegislation,
+  getLegislationDocument,
+} from "./legislationGovUk";
+import {
+  LEGISLATION_SYSTEM_PROMPT,
+  LEGISLATION_TOOL_NAMES,
+  LEGISLATION_TOOLS,
+  type LegislationToolEvent,
+} from "./legalSourcesTools/legislationGovUkTools";
+import {
   buildUserMcpTools,
   executeMcpToolCall,
   type McpToolEvent,
@@ -185,7 +195,7 @@ export function buildSystemPrompt(includeResearchTools = true): string {
   const base = includeResearchTools
     ? `${SYSTEM_PROMPT_BEFORE_RESEARCH}\n\n${COURTLISTENER_SYSTEM_PROMPT}\n${SYSTEM_PROMPT_AFTER_RESEARCH}`
     : `${SYSTEM_PROMPT_BEFORE_RESEARCH}\n\n${SYSTEM_PROMPT_AFTER_RESEARCH}`;
-  return `${base}\n\n${COMPANIES_HOUSE_SYSTEM_PROMPT}`;
+  return `${base}\n\n${COMPANIES_HOUSE_SYSTEM_PROMPT}\n\n${LEGISLATION_SYSTEM_PROMPT}`;
 }
 
 export const SYSTEM_PROMPT = buildSystemPrompt(true);
@@ -2023,6 +2033,25 @@ type CourtlistenerTurnState = {
   casesByClusterId: Map<number, CourtlistenerCaseRecord>;
 };
 
+type LegislationSectionRecord = {
+  id: string;
+  label: string;
+  title: string | null;
+  text: string;
+};
+
+type LegislationDocumentRecord = {
+  uri: string;
+  version: "revised" | "enacted";
+  title: string | null;
+  url: string;
+  sections: LegislationSectionRecord[];
+};
+
+type LegislationTurnState = {
+  documentsByUri: Map<string, LegislationDocumentRecord>;
+};
+
 function nonEmpty(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
@@ -2310,6 +2339,7 @@ export async function runToolCalls(
   projectId?: string | null,
   courtlistenerState?: CourtlistenerTurnState,
   apiKeys?: import("./llm").UserApiKeys,
+  legislationState?: LegislationTurnState,
 ): Promise<{
   toolResults: unknown[];
   docsRead: { filename: string; document_id?: string }[];
@@ -2322,6 +2352,7 @@ export async function runToolCalls(
   caseCitationEvents: CaseCitationEvent[];
   mcpEvents: McpToolEvent[];
   companiesHouseEvents: CompaniesHouseToolEvent[];
+  legislationEvents: LegislationToolEvent[];
 }> {
   const toolResults: unknown[] = [];
   const docsRead: { filename: string; document_id?: string }[] = [];
@@ -2338,10 +2369,16 @@ export async function runToolCalls(
   const caseCitationEvents: CaseCitationEvent[] = [];
   const mcpEvents: McpToolEvent[] = [];
   const companiesHouseEvents: CompaniesHouseToolEvent[] = [];
+  const legislationEvents: LegislationToolEvent[] = [];
   const courtState: CourtlistenerTurnState =
     courtlistenerState ??
     {
       casesByClusterId: new Map(),
+    };
+  const legislationTurnState: LegislationTurnState =
+    legislationState ??
+    {
+      documentsByUri: new Map(),
     };
   const groupedFindInCaseSearches = toolCalls
     .filter((tc) => tc.function.name === COURTLISTENER_TOOL_NAMES.findInCase)
@@ -3169,7 +3206,7 @@ export async function runToolCalls(
               ? err.message
               : "Companies House search failed.",
         };
-        write(`data: ${JSON.stringify(event)}\n\n`);
+      write(`data: ${JSON.stringify(event)}\n\n`);
         companiesHouseEvents.push(event);
         toolResults.push({
           role: "tool",
@@ -3177,7 +3214,300 @@ export async function runToolCalls(
           content: JSON.stringify({ error: event.error }),
         });
       }
-    } else if (tc.function.name === COMPANIES_HOUSE_TOOL_NAMES.getCompany) {
+    } else if (tc.function.name === LEGISLATION_TOOL_NAMES.search) {
+      const query = typeof args.query === "string" ? args.query : "";
+      write(
+        `data: ${JSON.stringify({ type: "legislation_search_start", query })}\n\n`,
+      );
+      try {
+        const result = await searchLegislation({
+          query: query || undefined,
+          maxResults:
+            typeof args.max_results === "number" ? args.max_results : undefined,
+        });
+        const resultCount =
+          result &&
+          typeof result === "object" &&
+          Array.isArray((result as { results?: unknown }).results)
+            ? (result as { results: unknown[] }).results.length
+            : 0;
+        const error =
+          result &&
+          typeof result === "object" &&
+          typeof (result as { error?: unknown }).error === "string"
+            ? (result as { error: string }).error
+            : undefined;
+        const event: LegislationToolEvent = {
+          type: "legislation_search",
+          query,
+          result_count: resultCount,
+          ...(error ? { error } : {}),
+        };
+        write(`data: ${JSON.stringify(event)}\n\n`);
+        legislationEvents.push(event);
+        toolResults.push({
+          role: "tool",
+          tool_call_id: tc.id,
+          content: JSON.stringify(result),
+        });
+      } catch (err) {
+        const event: LegislationToolEvent = {
+          type: "legislation_search",
+          query,
+          result_count: 0,
+          error:
+            err instanceof Error ? err.message : "Legislation search failed.",
+        };
+        write(`data: ${JSON.stringify(event)}\n\n`);
+        legislationEvents.push(event);
+        toolResults.push({
+          role: "tool",
+          tool_call_id: tc.id,
+          content: JSON.stringify({ error: event.error }),
+        });
+      }
+    } else if (tc.function.name === LEGISLATION_TOOL_NAMES.getDocument) {
+      const uri = typeof args.uri === "string" ? args.uri.trim() : "";
+      const version = args.version === "enacted" ? "enacted" : "revised";
+      write(
+        `data: ${JSON.stringify({ type: "legislation_get_document_start", uri, version })}\n\n`,
+      );
+      try {
+        const result = await getLegislationDocument({
+          uri: uri || undefined,
+          version,
+        });
+        const sections = Array.isArray(
+          (result as { sections?: unknown }).sections,
+        )
+          ? (result as { sections: LegislationSectionRecord[] }).sections
+          : [];
+        const title =
+          typeof (result as { title?: unknown }).title === "string"
+            ? (result as { title: string }).title
+            : null;
+        const url =
+          typeof (result as { url?: unknown }).url === "string"
+            ? (result as { url: string }).url
+            : uri;
+        const error =
+          result &&
+          typeof result === "object" &&
+          typeof (result as { error?: unknown }).error === "string"
+            ? (result as { error: string }).error
+            : undefined;
+
+        if (!error && uri) {
+          legislationTurnState.documentsByUri.set(uri, {
+            uri,
+            version,
+            title,
+            url,
+            sections,
+          });
+        }
+
+        const event: LegislationToolEvent = {
+          type: "legislation_get_document",
+          uri,
+          title,
+          version,
+          section_count: sections.length,
+          ...(error ? { error } : {}),
+        };
+        write(`data: ${JSON.stringify(event)}\n\n`);
+        legislationEvents.push(event);
+        toolResults.push({
+          role: "tool",
+          tool_call_id: tc.id,
+          content: JSON.stringify({
+            ok: !error,
+            uri,
+            title,
+            version,
+            section_count: sections.length,
+            sections: sections.map((s) => ({
+              section: s.label,
+              title: s.title,
+              id: s.id,
+            })),
+            ...(error ? { error } : {}),
+            next_required_action:
+              "Section text is cached server-side only. Use legislation_find_in_document with short 1-4 word keyword probes for relevant provisions, or legislation_read_section if you already know which section(s) you need.",
+          }),
+        });
+      } catch (err) {
+        const event: LegislationToolEvent = {
+          type: "legislation_get_document",
+          uri,
+          version,
+          section_count: 0,
+          error:
+            err instanceof Error
+              ? err.message
+              : "Failed to fetch legislation document.",
+        };
+        write(`data: ${JSON.stringify(event)}\n\n`);
+        legislationEvents.push(event);
+        toolResults.push({
+          role: "tool",
+          tool_call_id: tc.id,
+          content: JSON.stringify({ error: event.error }),
+        });
+      }
+    } else if (tc.function.name === LEGISLATION_TOOL_NAMES.findInDocument) {
+      const uri = typeof args.uri === "string" ? args.uri.trim() : "";
+      const query = typeof args.query === "string" ? args.query : "";
+      const maxResults =
+        typeof args.max_results === "number"
+          ? Math.max(0, Math.floor(args.max_results))
+          : 20;
+      write(
+        `data: ${JSON.stringify({ type: "legislation_find_in_document_start", uri, query })}\n\n`,
+      );
+
+      const record = uri
+        ? legislationTurnState.documentsByUri.get(uri)
+        : undefined;
+      if (!record) {
+        const error =
+          "Document has not been fetched in this turn. Call legislation_get_document first.";
+        const event: LegislationToolEvent = {
+          type: "legislation_find_in_document",
+          uri: uri || null,
+          query,
+          total_matches: 0,
+          error,
+        };
+        write(`data: ${JSON.stringify(event)}\n\n`);
+        legislationEvents.push(event);
+        toolResults.push({
+          role: "tool",
+          tool_call_id: tc.id,
+          content: JSON.stringify({ ok: false, uri: uri || null, error }),
+        });
+      } else {
+        const hits: Array
+          TextMatch & { section: string; title: string | null }
+        > = [];
+        let totalMatches = 0;
+        for (const section of record.sections) {
+          const remaining = Math.max(0, maxResults - hits.length);
+          const result = findTextMatches({
+            text: section.text,
+            query,
+            maxResults: remaining,
+            contextChars: 160,
+            startIndex: hits.length,
+          });
+          totalMatches += result.totalMatches;
+          hits.push(
+            ...result.hits.map((hit) => ({
+              ...hit,
+              section: section.label,
+              title: section.title,
+            })),
+          );
+        }
+
+        const event: LegislationToolEvent = {
+          type: "legislation_find_in_document",
+          uri,
+          query,
+          total_matches: totalMatches,
+          title: record.title,
+        };
+        write(`data: ${JSON.stringify(event)}\n\n`);
+        legislationEvents.push(event);
+        toolResults.push({
+          role: "tool",
+          tool_call_id: tc.id,
+          content: JSON.stringify({
+            ok: true,
+            uri,
+            title: record.title,
+            query,
+            total_matches: totalMatches,
+            returned: hits.length,
+            truncated: totalMatches > hits.length,
+            hits,
+          }),
+        });
+      }
+    } else if (tc.function.name === LEGISLATION_TOOL_NAMES.readSection) {
+      const uri = typeof args.uri === "string" ? args.uri.trim() : "";
+      const requestedSections = Array.isArray(args.sections)
+        ? args.sections.filter((s): s is string => typeof s === "string")
+        : typeof args.section === "string"
+          ? [args.section]
+          : [];
+      write(
+        `data: ${JSON.stringify({ type: "legislation_read_section_start", uri })}\n\n`,
+      );
+
+      const record = uri
+        ? legislationTurnState.documentsByUri.get(uri)
+        : undefined;
+      if (!record) {
+        const error =
+          "Document has not been fetched in this turn. Call legislation_get_document first.";
+        const event: LegislationToolEvent = {
+          type: "legislation_read_section",
+          uri: uri || null,
+          section_count: 0,
+          error,
+        };
+        write(`data: ${JSON.stringify(event)}\n\n`);
+        legislationEvents.push(event);
+        toolResults.push({
+          role: "tool",
+          tool_call_id: tc.id,
+          content: JSON.stringify({ ok: false, uri: uri || null, error }),
+        });
+      } else {
+        const normalize = (ref: string) => {
+          const cleaned = ref.replace(/^\/+/, "");
+          if (cleaned.startsWith("section-") || cleaned.startsWith("schedule-"))
+            return cleaned;
+          if (cleaned.startsWith("section/"))
+            return cleaned.replace("section/", "section-");
+          if (cleaned.startsWith("schedule/"))
+            return cleaned.replace("schedule/", "schedule-");
+          return `section-${cleaned}`;
+        };
+        const wanted = new Set(requestedSections.map(normalize));
+        const matched = wanted.size
+          ? record.sections.filter((s) => wanted.has(s.id))
+          : record.sections;
+
+        const event: LegislationToolEvent = {
+          type: "legislation_read_section",
+          uri,
+          title: record.title,
+          section_count: matched.length,
+        };
+        write(`data: ${JSON.stringify(event)}\n\n`);
+        legislationEvents.push(event);
+        toolResults.push({
+          role: "tool",
+          tool_call_id: tc.id,
+          content: JSON.stringify({
+            ok: true,
+            uri,
+            title: record.title,
+            section_count: matched.length,
+            sections: matched.map((s) => ({
+              section: s.label,
+              title: s.title,
+              text: s.text,
+              url: `${record.url}/${s.id
+                .replace("section-", "section/")
+                .replace("schedule-", "schedule/")}`,
+            })),
+          }),
+        });
+      }
+    } else if (tc.function.name === "edit_document" && docIndex) {
       const companyNumber =
         typeof args.companyNumber === "string" ? args.companyNumber : "";
       write(
@@ -3791,7 +4121,7 @@ export async function runToolCalls(
     courtlistenerEvents.push(groupEvent);
   }
 
-  return {
+return {
     toolResults,
     docsRead,
     docsFound,
@@ -3803,6 +4133,7 @@ export async function runToolCalls(
     caseCitationEvents,
     mcpEvents,
     companiesHouseEvents,
+    legislationEvents,
   };
 }
 
@@ -4028,6 +4359,7 @@ type AssistantEvent =
   | CaseCitationEvent
   | CourtlistenerToolEvent
   | CompaniesHouseToolEvent
+  | LegislationToolEvent
   | McpToolEvent
   | { type: "case_opinions"; cluster_id: number; case: unknown }
   | { type: "content"; text: string }
@@ -4112,10 +4444,11 @@ export async function runLLMStream(params: {
   } = params;
   const researchTools = includeResearchTools ? COURTLISTENER_TOOLS : [];
   const mcpTools = await buildUserMcpTools(userId, db);
-  const baseTools = [
+const baseTools = [
     ...TOOLS,
     ...researchTools,
     ...COMPANIES_HOUSE_TOOLS,
+    ...LEGISLATION_TOOLS,
     ...WORKFLOW_TOOLS,
   ];
   const activeTools = extraTools?.length
@@ -4144,6 +4477,9 @@ export async function runLLMStream(params: {
   const courtlistenerTurnState: CourtlistenerTurnState = {
       casesByClusterId: new Map(),
     };
+  const legislationTurnState: LegislationTurnState = {
+    documentsByUri: new Map(),
+  };
   let fullText = "";
   let iterText = "";
   let iterVisibleText = "";
@@ -4313,7 +4649,7 @@ export async function runLLMStream(params: {
             arguments: JSON.stringify(c.input),
           },
         }));
-        const {
+      const {
           toolResults,
           docsRead,
           docsFound,
@@ -4325,6 +4661,7 @@ export async function runLLMStream(params: {
           caseCitationEvents,
           mcpEvents,
           companiesHouseEvents,
+          legislationEvents,
         } = await runToolCalls(
           toolCalls,
           docStore,
@@ -4338,6 +4675,7 @@ export async function runLLMStream(params: {
           projectId,
         courtlistenerTurnState,
         apiKeys,
+        legislationTurnState,
       );
         throwIfAborted(signal);
         for (const r of docsRead) {
@@ -4401,6 +4739,9 @@ export async function runLLMStream(params: {
           events.push(event);
         }
         for (const event of companiesHouseEvents) {
+          events.push(event);
+        }
+        for (const event of legislationEvents) {
           events.push(event);
         }
 
