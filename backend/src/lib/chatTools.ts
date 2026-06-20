@@ -31,6 +31,16 @@ import {
   type CourtlistenerToolEvent,
 } from "./legalSourcesTools/courtlistenerTools";
 import {
+  import {
+  searchCompaniesHouse,
+  getCompanyFullReview,
+} from "./companieshouse";
+import {
+  COMPANIES_HOUSE_SYSTEM_PROMPT,
+  COMPANIES_HOUSE_TOOL_NAMES,
+  COMPANIES_HOUSE_TOOLS,
+  type CompaniesHouseToolEvent,
+} from "./legalSourcesTools/companiesHouseTools";
   buildUserMcpTools,
   executeMcpToolCall,
   type McpToolEvent,
