@@ -31,7 +31,6 @@ import {
   type CourtlistenerToolEvent,
 } from "./legalSourcesTools/courtlistenerTools";
 import {
-  import {
   searchCompaniesHouse,
   getCompanyFullReview,
 } from "./companieshouse";
@@ -41,6 +40,7 @@ import {
   COMPANIES_HOUSE_TOOLS,
   type CompaniesHouseToolEvent,
 } from "./legalSourcesTools/companiesHouseTools";
+import {
   buildUserMcpTools,
   executeMcpToolCall,
   type McpToolEvent,
@@ -178,11 +178,14 @@ GENERAL GUIDANCE:
  * CourtListener (US case-law) research instructions are spliced in; when
  * false they are omitted entirely so the model is not told about tools it
  * does not have. Gated per-user by the Legal Research > US feature toggle.
+ * Companies House (UK company research) instructions are always appended,
+ * since that feature is not gated behind the same toggle.
  */
 export function buildSystemPrompt(includeResearchTools = true): string {
-  return includeResearchTools
+  const base = includeResearchTools
     ? `${SYSTEM_PROMPT_BEFORE_RESEARCH}\n\n${COURTLISTENER_SYSTEM_PROMPT}\n${SYSTEM_PROMPT_AFTER_RESEARCH}`
     : `${SYSTEM_PROMPT_BEFORE_RESEARCH}\n\n${SYSTEM_PROMPT_AFTER_RESEARCH}`;
+  return `${base}\n\n${COMPANIES_HOUSE_SYSTEM_PROMPT}`;
 }
 
 export const SYSTEM_PROMPT = buildSystemPrompt(true);
@@ -2318,6 +2321,7 @@ export async function runToolCalls(
   courtlistenerEvents: CourtlistenerToolEvent[];
   caseCitationEvents: CaseCitationEvent[];
   mcpEvents: McpToolEvent[];
+  companiesHouseEvents: CompaniesHouseToolEvent[];
 }> {
   const toolResults: unknown[] = [];
   const docsRead: { filename: string; document_id?: string }[] = [];
@@ -2333,6 +2337,7 @@ export async function runToolCalls(
   const courtlistenerEvents: CourtlistenerToolEvent[] = [];
   const caseCitationEvents: CaseCitationEvent[] = [];
   const mcpEvents: McpToolEvent[] = [];
+  const companiesHouseEvents: CompaniesHouseToolEvent[] = [];
   const courtState: CourtlistenerTurnState =
     courtlistenerState ??
     {
@@ -3118,6 +3123,134 @@ export async function runToolCalls(
           }),
         });
       }
+    } else if (tc.function.name === COMPANIES_HOUSE_TOOL_NAMES.search) {
+      const query = typeof args.query === "string" ? args.query : "";
+      write(
+        `data: ${JSON.stringify({ type: "companies_house_search_start", query })}\n\n`,
+      );
+      try {
+        const result = await searchCompaniesHouse({
+          query: query || undefined,
+          limit: typeof args.limit === "number" ? args.limit : undefined,
+          apiKey: apiKeys?.companieshouse,
+        });
+        const resultCount =
+          result &&
+          typeof result === "object" &&
+          Array.isArray((result as { results?: unknown }).results)
+            ? (result as { results: unknown[] }).results.length
+            : 0;
+        const error =
+          result &&
+          typeof result === "object" &&
+          typeof (result as { error?: unknown }).error === "string"
+            ? (result as { error: string }).error
+            : undefined;
+        const event: CompaniesHouseToolEvent = {
+          type: "companies_house_search",
+          query,
+          result_count: resultCount,
+          ...(error ? { error } : {}),
+        };
+        write(`data: ${JSON.stringify(event)}\n\n`);
+        companiesHouseEvents.push(event);
+        toolResults.push({
+          role: "tool",
+          tool_call_id: tc.id,
+          content: JSON.stringify(result),
+        });
+      } catch (err) {
+        const event: CompaniesHouseToolEvent = {
+          type: "companies_house_search",
+          query,
+          result_count: 0,
+          error:
+            err instanceof Error
+              ? err.message
+              : "Companies House search failed.",
+        };
+        write(`data: ${JSON.stringify(event)}\n\n`);
+        companiesHouseEvents.push(event);
+        toolResults.push({
+          role: "tool",
+          tool_call_id: tc.id,
+          content: JSON.stringify({ error: event.error }),
+        });
+      }
+    } else if (tc.function.name === COMPANIES_HOUSE_TOOL_NAMES.getCompany) {
+      const companyNumber =
+        typeof args.companyNumber === "string" ? args.companyNumber : "";
+      write(
+        `data: ${JSON.stringify({
+          type: "companies_house_get_company_start",
+          company_number: companyNumber,
+        })}\n\n`,
+      );
+      try {
+        const result = await getCompanyFullReview({
+          companyNumber: companyNumber || undefined,
+          apiKey: apiKeys?.companieshouse,
+        });
+        const profile = (result as { profile?: unknown }).profile as
+          | Record<string, unknown>
+          | undefined;
+        const officers = (result as { officers?: unknown[] }).officers;
+        const psc = (
+          result as {
+            personsWithSignificantControl?: { items?: unknown[] };
+          }
+        ).personsWithSignificantControl;
+        const filingHistory = (
+          result as { filingHistory?: { items?: unknown[] } }
+        ).filingHistory;
+        const error =
+          result &&
+          typeof result === "object" &&
+          typeof (result as { error?: unknown }).error === "string"
+            ? (result as { error: string }).error
+            : undefined;
+        const event: CompaniesHouseToolEvent = {
+          type: "companies_house_get_company",
+          company_number: companyNumber,
+          company_name:
+            typeof profile?.company_name === "string"
+              ? profile.company_name
+              : null,
+          officer_count: Array.isArray(officers) ? officers.length : 0,
+          psc_count: Array.isArray(psc?.items) ? psc!.items!.length : 0,
+          filing_count: Array.isArray(filingHistory?.items)
+            ? filingHistory!.items!.length
+            : 0,
+          ...(error ? { error } : {}),
+        };
+        write(`data: ${JSON.stringify(event)}\n\n`);
+        companiesHouseEvents.push(event);
+        toolResults.push({
+          role: "tool",
+          tool_call_id: tc.id,
+          content: JSON.stringify(result),
+        });
+      } catch (err) {
+        const event: CompaniesHouseToolEvent = {
+          type: "companies_house_get_company",
+          company_number: companyNumber,
+          company_name: null,
+          officer_count: 0,
+          psc_count: 0,
+          filing_count: 0,
+          error:
+            err instanceof Error
+              ? err.message
+              : "Companies House lookup failed.",
+        };
+        write(`data: ${JSON.stringify(event)}\n\n`);
+        companiesHouseEvents.push(event);
+        toolResults.push({
+          role: "tool",
+          tool_call_id: tc.id,
+          content: JSON.stringify({ error: event.error }),
+        });
+      }
     } else if (tc.function.name === "edit_document" && docIndex) {
       const rawDocId = args.doc_id as string;
       const editsRaw = args.edits as unknown[] | undefined;
@@ -3669,6 +3802,7 @@ export async function runToolCalls(
     courtlistenerEvents,
     caseCitationEvents,
     mcpEvents,
+    companiesHouseEvents,
   };
 }
 
@@ -3893,6 +4027,7 @@ type AssistantEvent =
     }
   | CaseCitationEvent
   | CourtlistenerToolEvent
+  | CompaniesHouseToolEvent
   | McpToolEvent
   | { type: "case_opinions"; cluster_id: number; case: unknown }
   | { type: "content"; text: string }
@@ -3977,7 +4112,12 @@ export async function runLLMStream(params: {
   } = params;
   const researchTools = includeResearchTools ? COURTLISTENER_TOOLS : [];
   const mcpTools = await buildUserMcpTools(userId, db);
-  const baseTools = [...TOOLS, ...researchTools, ...WORKFLOW_TOOLS];
+  const baseTools = [
+    ...TOOLS,
+    ...researchTools,
+    ...COMPANIES_HOUSE_TOOLS,
+    ...WORKFLOW_TOOLS,
+  ];
   const activeTools = extraTools?.length
     ? [...baseTools, ...mcpTools, ...extraTools]
     : [...baseTools, ...mcpTools];
@@ -4184,6 +4324,7 @@ export async function runLLMStream(params: {
           courtlistenerEvents,
           caseCitationEvents,
           mcpEvents,
+          companiesHouseEvents,
         } = await runToolCalls(
           toolCalls,
           docStore,
@@ -4257,6 +4398,9 @@ export async function runLLMStream(params: {
           events.push(event);
         }
         for (const event of caseCitationEvents) {
+          events.push(event);
+        }
+        for (const event of companiesHouseEvents) {
           events.push(event);
         }
 
