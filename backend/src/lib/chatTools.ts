@@ -3387,7 +3387,7 @@ export async function runToolCalls(
           content: JSON.stringify({ ok: false, uri: uri || null, error }),
         });
       } else {
-        const hits: Array
+        const hits: Array<
           TextMatch & { section: string; title: string | null }
         > = [];
         let totalMatches = 0;
