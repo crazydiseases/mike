@@ -59,6 +59,22 @@ function extractAttr(xml: string, tagPattern: string, attr: string): string | nu
     return match ? match[1] : null;
 }
 
+function parseLinkTags(entryXml: string): { rel?: string; type?: string; href?: string }[] {
+    const links: { rel?: string; type?: string; href?: string }[] = [];
+    const linkPattern = /<link\b([^>]*)\/?>/gi;
+    let linkMatch: RegExpExecArray | null;
+    while ((linkMatch = linkPattern.exec(entryXml))) {
+        const attrsStr = linkMatch[1];
+        const attrs: Record<string, string> = {};
+        const attrPattern = /([a-zA-Z:-]+)="([^"]*)"/g;
+        let attrMatch: RegExpExecArray | null;
+        while ((attrMatch = attrPattern.exec(attrsStr))) {
+            attrs[attrMatch[1]] = attrMatch[2];
+        }
+        links.push(attrs);
+    }
+    return links;
+}
 // --- Exported tool implementations ---
 
 export async function searchFindCaseLaw(args: {
@@ -79,15 +95,17 @@ export async function searchFindCaseLaw(args: {
 
         const results = entries.map((entryMatch) => {
             const entry = entryMatch[1];
-            const htmlUrl = extractAttr(entry, `link[^>]*rel="alternate"(?![^>]*type=)`, "href")
-                ?? extractAttr(entry, "link", "href");
-            const xmlUrl = extractAttr(entry, `link[^>]*type="application/akn\\+xml"`, "href");
+            const links = parseLinkTags(entry);
+            const xmlLink = links.find((l) => l.type === "application/akn+xml");
+            const htmlLink =
+                links.find((l) => l.rel === "alternate" && l.type !== "application/akn+xml") ??
+                links.find((l) => !l.type);
             return {
-                uri: xmlUrl,
+                uri: xmlLink?.href ?? null,
                 title: extractTagText(entry, "title"),
                 summary: extractTagText(entry, "summary"),
                 published: extractTagText(entry, "published"),
-                htmlUrl: htmlUrl || null,
+                htmlUrl: htmlLink?.href ?? null,
             };
         }).filter((r) => !!r.uri);
 
