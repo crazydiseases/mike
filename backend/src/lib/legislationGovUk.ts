@@ -73,26 +73,41 @@ type LegislationSection = {
 };
 
 function extractSections(xml: string): LegislationSection[] {
-    // CLML wraps each section/schedule provision in a P1group (or P2group for
-    // sub-divisions) carrying id="section-N" or id="schedule-N".
-    const sections: LegislationSection[] = [];
-    const groupPattern = /<P\dgroup\b[^>]*id="((?:section|schedule)-[^"]+)"[^>]*>([\s\S]*?)<\/P\dgroup>/gi;
-    let match: RegExpExecArray | null;
+  const sections: LegislationSection[] = [];
+  const seenIds = new Set<string>();
 
-    while ((match = groupPattern.exec(xml))) {
-        const id = match[1];
-        const body = match[2];
-        const title = extractTagText(body, "Title");
-        const number =
-            extractTagText(body, "Number") ?? extractTagText(body, "Pnumber");
-        sections.push({
-            id,
-            label: number ?? id,
-            title,
-            text: stripTags(body),
-        });
-    }
-    return sections;
+  // Most CLML documents mark each section/schedule provision directly as
+  // <P1 id="section-N"> ... </P1> (no "group" in the tag name).
+  const directPattern =
+    /<P(\d)\b[^>]*\bid="((?:section|schedule)-[^"]+)"[^>]*>([\s\S]*?)<\/P\1>/gi;
+  let match: RegExpExecArray | null;
+  while ((match = directPattern.exec(xml))) {
+    const id = match[2];
+    if (seenIds.has(id)) continue;
+    seenIds.add(id);
+    const body = match[3];
+    const title = extractTagText(body, "Title");
+    const number =
+      extractTagText(body, "Pnumber") ?? extractTagText(body, "Number");
+    sections.push({ id, label: number ?? id, title, text: stripTags(body) });
+  }
+
+  // Fallback: a smaller number of documents wrap provisions in
+  // <P1group id="section-N"> instead. Only used for ids not already found.
+  const groupPattern =
+    /<P\dgroup\b[^>]*\bid="((?:section|schedule)-[^"]+)"[^>]*>([\s\S]*?)<\/P\dgroup>/gi;
+  while ((match = groupPattern.exec(xml))) {
+    const id = match[1];
+    if (seenIds.has(id)) continue;
+    seenIds.add(id);
+    const body = match[2];
+    const title = extractTagText(body, "Title");
+    const number =
+      extractTagText(body, "Number") ?? extractTagText(body, "Pnumber");
+    sections.push({ id, label: number ?? id, title, text: stripTags(body) });
+  }
+
+  return sections;
 }
 
 // --- Exported tool implementations ---
