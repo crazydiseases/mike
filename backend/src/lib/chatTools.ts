@@ -61,6 +61,15 @@ import {
   type FindCaseLawToolEvent,
 } from "./legalSourcesTools/findCaseLawTools";
 import {
+  searchPlanningConstraints,
+} from "./planningData";
+import {
+  PLANNING_DATA_SYSTEM_PROMPT,
+  PLANNING_DATA_TOOL_NAMES,
+  PLANNING_DATA_TOOLS,
+  type PlanningDataToolEvent,
+} from "./legalSourcesTools/planningDataTools";
+import {
   buildUserMcpTools,
   executeMcpToolCall,
   type McpToolEvent,
@@ -206,7 +215,7 @@ export function buildSystemPrompt(includeResearchTools = true): string {
   const base = includeResearchTools
     ? `${SYSTEM_PROMPT_BEFORE_RESEARCH}\n\n${COURTLISTENER_SYSTEM_PROMPT}\n${SYSTEM_PROMPT_AFTER_RESEARCH}`
     : `${SYSTEM_PROMPT_BEFORE_RESEARCH}\n\n${SYSTEM_PROMPT_AFTER_RESEARCH}`;
-return `${base}\n\n${COMPANIES_HOUSE_SYSTEM_PROMPT}\n\n${LEGISLATION_SYSTEM_PROMPT}\n\n${FIND_CASE_LAW_SYSTEM_PROMPT}`;
+return `${base}\n\n${COMPANIES_HOUSE_SYSTEM_PROMPT}\n\n${LEGISLATION_SYSTEM_PROMPT}\n\n${FIND_CASE_LAW_SYSTEM_PROMPT}\n\n${PLANNING_DATA_SYSTEM_PROMPT}`;
 }
 
 export const SYSTEM_PROMPT = buildSystemPrompt(true);
@@ -2377,6 +2386,7 @@ export async function runToolCalls(
   companiesHouseEvents: CompaniesHouseToolEvent[];
   legislationEvents: LegislationToolEvent[];
   findCaseLawEvents: FindCaseLawToolEvent[];
+  planningDataEvents: PlanningDataToolEvent[];
 }> {
   const toolResults: unknown[] = [];
   const docsRead: { filename: string; document_id?: string }[] = [];
@@ -2395,6 +2405,7 @@ export async function runToolCalls(
   const companiesHouseEvents: CompaniesHouseToolEvent[] = [];
   const legislationEvents: LegislationToolEvent[] = [];
   const findCaseLawEvents: FindCaseLawToolEvent[] = [];
+  const planningDataEvents: PlanningDataToolEvent[] = [];
   const courtState: CourtlistenerTurnState =
     courtlistenerState ??
     {
@@ -3790,6 +3801,80 @@ export async function runToolCalls(
           }),
         });
       }
+    } else if (tc.function.name === PLANNING_DATA_TOOL_NAMES.search) {
+      const postcode = typeof args.postcode === "string" ? args.postcode : undefined;
+      const latitude = typeof args.latitude === "number" ? args.latitude : undefined;
+      const longitude = typeof args.longitude === "number" ? args.longitude : undefined;
+      const datasets = Array.isArray(args.datasets)
+        ? args.datasets.filter((d): d is string => typeof d === "string")
+        : undefined;
+      write(
+        `data: ${JSON.stringify({ type: "planning_data_search_start", postcode: postcode ?? null })}\n\n`,
+      );
+      try {
+        const result = await searchPlanningConstraints({
+          postcode,
+          latitude,
+          longitude,
+          datasets,
+        });
+        const resultCount =
+          result &&
+          typeof result === "object" &&
+          Array.isArray((result as { entities?: unknown }).entities)
+            ? (result as { entities: unknown[] }).entities.length
+            : 0;
+        const error =
+          result &&
+          typeof result === "object" &&
+          typeof (result as { error?: unknown }).error === "string"
+            ? (result as { error: string }).error
+            : undefined;
+        const resolvedPostcode =
+          typeof (result as { postcode?: unknown }).postcode === "string"
+            ? (result as { postcode: string }).postcode
+            : postcode ?? null;
+        const resolvedLat =
+          typeof (result as { latitude?: unknown }).latitude === "number"
+            ? (result as { latitude: number }).latitude
+            : null;
+        const resolvedLon =
+          typeof (result as { longitude?: unknown }).longitude === "number"
+            ? (result as { longitude: number }).longitude
+            : null;
+        const event: PlanningDataToolEvent = {
+          type: "planning_data_search",
+          postcode: resolvedPostcode,
+          latitude: resolvedLat,
+          longitude: resolvedLon,
+          result_count: resultCount,
+          ...(error ? { error } : {}),
+        };
+        write(`data: ${JSON.stringify(event)}\n\n`);
+        planningDataEvents.push(event);
+        toolResults.push({
+          role: "tool",
+          tool_call_id: tc.id,
+          content: JSON.stringify(result),
+        });
+      } catch (err) {
+        const event: PlanningDataToolEvent = {
+          type: "planning_data_search",
+          postcode: postcode ?? null,
+          latitude: latitude ?? null,
+          longitude: longitude ?? null,
+          result_count: 0,
+          error:
+            err instanceof Error ? err.message : "Planning Data lookup failed.",
+        };
+        write(`data: ${JSON.stringify(event)}\n\n`);
+        planningDataEvents.push(event);
+        toolResults.push({
+          role: "tool",
+          tool_call_id: tc.id,
+          content: JSON.stringify({ error: event.error }),
+        });
+      }
     } else if (tc.function.name === COMPANIES_HOUSE_TOOL_NAMES.getCompany) {
       const companyNumber =
         typeof args.companyNumber === "string" ? args.companyNumber : "";
@@ -4418,6 +4503,7 @@ return {
     companiesHouseEvents,
     legislationEvents,
     findCaseLawEvents,
+    planningDataEvents,
   };
 }
 
@@ -4645,6 +4731,7 @@ type AssistantEvent =
   | CompaniesHouseToolEvent
   | LegislationToolEvent
   | FindCaseLawToolEvent
+  | PlanningDataToolEvent
   | McpToolEvent
   | { type: "case_opinions"; cluster_id: number; case: unknown }
   | { type: "content"; text: string }
@@ -4735,6 +4822,7 @@ const baseTools = [
     ...COMPANIES_HOUSE_TOOLS,
     ...LEGISLATION_TOOLS,
     ...FIND_CASE_LAW_TOOLS,
+    ...PLANNING_DATA_TOOLS,
     ...WORKFLOW_TOOLS,
   ];
   const activeTools = extraTools?.length
@@ -4952,6 +5040,7 @@ const baseTools = [
           companiesHouseEvents,
           legislationEvents,
           findCaseLawEvents,
+          planningDataEvents,
         } = await runToolCalls(
           toolCalls,
           docStore,
@@ -5036,6 +5125,9 @@ const baseTools = [
           events.push(event);
         }
         for (const event of findCaseLawEvents) {
+          events.push(event);
+        }
+        for (const event of planningDataEvents) {
           events.push(event);
         }
 
