@@ -3508,7 +3508,7 @@ export async function runToolCalls(
           }),
         });
       }
-    } else if (tc.function.name === "edit_document" && docIndex) {
+    } else if (tc.function.name === COMPANIES_HOUSE_TOOL_NAMES.getCompany) {
       const companyNumber =
         typeof args.companyNumber === "string" ? args.companyNumber : "";
       write(
