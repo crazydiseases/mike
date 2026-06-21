@@ -51,6 +51,16 @@ import {
   type LegislationToolEvent,
 } from "./legalSourcesTools/legislationGovUkTools";
 import {
+  searchFindCaseLaw,
+  getFindCaseLawDocument,
+} from "./findCaseLaw";
+import {
+  FIND_CASE_LAW_SYSTEM_PROMPT,
+  FIND_CASE_LAW_TOOL_NAMES,
+  FIND_CASE_LAW_TOOLS,
+  type FindCaseLawToolEvent,
+} from "./legalSourcesTools/findCaseLawTools";
+import {
   buildUserMcpTools,
   executeMcpToolCall,
   type McpToolEvent,
@@ -196,8 +206,8 @@ export function buildSystemPrompt(includeResearchTools = true): string {
   const base = includeResearchTools
     ? `${SYSTEM_PROMPT_BEFORE_RESEARCH}\n\n${COURTLISTENER_SYSTEM_PROMPT}\n${SYSTEM_PROMPT_AFTER_RESEARCH}`
     : `${SYSTEM_PROMPT_BEFORE_RESEARCH}\n\n${SYSTEM_PROMPT_AFTER_RESEARCH}`;
-  return `${base}\n\n${COMPANIES_HOUSE_SYSTEM_PROMPT}\n\n${LEGISLATION_SYSTEM_PROMPT}`;
-}
+return `${base}\n\n${COMPANIES_HOUSE_SYSTEM_PROMPT}\n\n${LEGISLATION_SYSTEM_PROMPT}\n\n${FIND_CASE_LAW_SYSTEM_PROMPT}`;
+}}
 
 export const SYSTEM_PROMPT = buildSystemPrompt(true);
 
@@ -2053,6 +2063,17 @@ type LegislationTurnState = {
   documentsByUri: Map<string, LegislationDocumentRecord>;
 };
 
+type FindCaseLawDocumentRecord = {
+  uri: string;
+  title: string | null;
+  htmlUrl: string | null;
+  text: string;
+};
+
+type FindCaseLawTurnState = {
+  documentsByUri: Map<string, FindCaseLawDocumentRecord>;
+};
+
 function nonEmpty(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
@@ -2339,8 +2360,9 @@ export async function runToolCalls(
   turnEditState?: TurnEditState,
   projectId?: string | null,
   courtlistenerState?: CourtlistenerTurnState,
-  apiKeys?: import("./llm").UserApiKeys,
+  aapiKeys?: import("./llm").UserApiKeys,
   legislationState?: LegislationTurnState,
+  findCaseLawState?: FindCaseLawTurnState,
 ): Promise<{
   toolResults: unknown[];
   docsRead: { filename: string; document_id?: string }[];
@@ -2354,6 +2376,7 @@ export async function runToolCalls(
   mcpEvents: McpToolEvent[];
   companiesHouseEvents: CompaniesHouseToolEvent[];
   legislationEvents: LegislationToolEvent[];
+  findCaseLawEvents: FindCaseLawToolEvent[];
 }> {
   const toolResults: unknown[] = [];
   const docsRead: { filename: string; document_id?: string }[] = [];
@@ -2371,6 +2394,7 @@ export async function runToolCalls(
   const mcpEvents: McpToolEvent[] = [];
   const companiesHouseEvents: CompaniesHouseToolEvent[] = [];
   const legislationEvents: LegislationToolEvent[] = [];
+  const findCaseLawEvents: FindCaseLawToolEvent[] = [];
   const courtState: CourtlistenerTurnState =
     courtlistenerState ??
     {
@@ -2378,6 +2402,11 @@ export async function runToolCalls(
     };
   const legislationTurnState: LegislationTurnState =
     legislationState ??
+    {
+      documentsByUri: new Map(),
+    };
+  const findCaseLawTurnState: FindCaseLawTurnState =
+    findCaseLawState ??
     {
       documentsByUri: new Map(),
     };
@@ -3508,6 +3537,259 @@ export async function runToolCalls(
           }),
         });
       }
+    } else if (tc.function.name === FIND_CASE_LAW_TOOL_NAMES.search) {
+      const query = typeof args.query === "string" ? args.query : "";
+      write(
+        `data: ${JSON.stringify({ type: "find_case_law_search_start", query })}\n\n`,
+      );
+      try {
+        const result = await searchFindCaseLaw({
+          query: query || undefined,
+          maxResults:
+            typeof args.max_results === "number" ? args.max_results : undefined,
+        });
+        const resultCount =
+          result &&
+          typeof result === "object" &&
+          Array.isArray((result as { results?: unknown }).results)
+            ? (result as { results: unknown[] }).results.length
+            : 0;
+        const error =
+          result &&
+          typeof result === "object" &&
+          typeof (result as { error?: unknown }).error === "string"
+            ? (result as { error: string }).error
+            : undefined;
+        const event: FindCaseLawToolEvent = {
+          type: "find_case_law_search",
+          query,
+          result_count: resultCount,
+          ...(error ? { error } : {}),
+        };
+        write(`data: ${JSON.stringify(event)}\n\n`);
+        findCaseLawEvents.push(event);
+        toolResults.push({
+          role: "tool",
+          tool_call_id: tc.id,
+          content: JSON.stringify(result),
+        });
+      } catch (err) {
+        const event: FindCaseLawToolEvent = {
+          type: "find_case_law_search",
+          query,
+          result_count: 0,
+          error:
+            err instanceof Error ? err.message : "Find Case Law search failed.",
+        };
+        write(`data: ${JSON.stringify(event)}\n\n`);
+        findCaseLawEvents.push(event);
+        toolResults.push({
+          role: "tool",
+          tool_call_id: tc.id,
+          content: JSON.stringify({ error: event.error }),
+        });
+      }
+    } else if (tc.function.name === FIND_CASE_LAW_TOOL_NAMES.getDocument) {
+      const uri = typeof args.uri === "string" ? args.uri.trim() : "";
+      const title = typeof args.title === "string" ? args.title : null;
+      const htmlUrl = typeof args.html_url === "string" ? args.html_url : null;
+      write(
+        `data: ${JSON.stringify({ type: "find_case_law_get_document_start", uri })}\n\n`,
+      );
+      try {
+        const result = await getFindCaseLawDocument({
+          uri: uri || undefined,
+          title,
+          htmlUrl,
+        });
+        const text =
+          typeof (result as { text?: unknown }).text === "string"
+            ? (result as { text: string }).text
+            : "";
+        const resolvedTitle =
+          typeof (result as { title?: unknown }).title === "string"
+            ? (result as { title: string }).title
+            : title;
+        const resolvedHtmlUrl =
+          typeof (result as { htmlUrl?: unknown }).htmlUrl === "string"
+            ? (result as { htmlUrl: string }).htmlUrl
+            : htmlUrl;
+        const error =
+          result &&
+          typeof result === "object" &&
+          typeof (result as { error?: unknown }).error === "string"
+            ? (result as { error: string }).error
+            : undefined;
+
+        if (!error && uri && text) {
+          findCaseLawTurnState.documentsByUri.set(uri, {
+            uri,
+            title: resolvedTitle,
+            htmlUrl: resolvedHtmlUrl,
+            text,
+          });
+        }
+
+        const event: FindCaseLawToolEvent = {
+          type: "find_case_law_get_document",
+          uri,
+          title: resolvedTitle,
+          char_count: text.length,
+          ...(error ? { error } : {}),
+        };
+        write(`data: ${JSON.stringify(event)}\n\n`);
+        findCaseLawEvents.push(event);
+        toolResults.push({
+          role: "tool",
+          tool_call_id: tc.id,
+          content: JSON.stringify({
+            ok: !error,
+            uri,
+            title: resolvedTitle,
+            htmlUrl: resolvedHtmlUrl,
+            char_count: text.length,
+            ...(error ? { error } : {}),
+            next_required_action:
+              "Judgment text is cached server-side only. Use find_case_law_find_in_document with short 1-4 word keyword probes for relevant passages, or find_case_law_read_document to read more broadly.",
+          }),
+        });
+      } catch (err) {
+        const event: FindCaseLawToolEvent = {
+          type: "find_case_law_get_document",
+          uri,
+          char_count: 0,
+          error:
+            err instanceof Error ? err.message : "Failed to fetch judgment.",
+        };
+        write(`data: ${JSON.stringify(event)}\n\n`);
+        findCaseLawEvents.push(event);
+        toolResults.push({
+          role: "tool",
+          tool_call_id: tc.id,
+          content: JSON.stringify({ error: event.error }),
+        });
+      }
+    } else if (tc.function.name === FIND_CASE_LAW_TOOL_NAMES.findInDocument) {
+      const uri = typeof args.uri === "string" ? args.uri.trim() : "";
+      const query = typeof args.query === "string" ? args.query : "";
+      const maxResults =
+        typeof args.max_results === "number"
+          ? Math.max(0, Math.floor(args.max_results))
+          : 20;
+      write(
+        `data: ${JSON.stringify({ type: "find_case_law_find_in_document_start", uri, query })}\n\n`,
+      );
+
+      const record = uri
+        ? findCaseLawTurnState.documentsByUri.get(uri)
+        : undefined;
+      if (!record) {
+        const error =
+          "Judgment has not been fetched in this turn. Call find_case_law_get_document first.";
+        const event: FindCaseLawToolEvent = {
+          type: "find_case_law_find_in_document",
+          uri: uri || null,
+          query,
+          total_matches: 0,
+          error,
+        };
+        write(`data: ${JSON.stringify(event)}\n\n`);
+        findCaseLawEvents.push(event);
+        toolResults.push({
+          role: "tool",
+          tool_call_id: tc.id,
+          content: JSON.stringify({ ok: false, uri: uri || null, error }),
+        });
+      } else {
+        const result = findTextMatches({
+          text: record.text,
+          query,
+          maxResults,
+          contextChars: 200,
+        });
+
+        const event: FindCaseLawToolEvent = {
+          type: "find_case_law_find_in_document",
+          uri,
+          query,
+          total_matches: result.totalMatches,
+          title: record.title,
+        };
+        write(`data: ${JSON.stringify(event)}\n\n`);
+        findCaseLawEvents.push(event);
+        toolResults.push({
+          role: "tool",
+          tool_call_id: tc.id,
+          content: JSON.stringify({
+            ok: true,
+            uri,
+            title: record.title,
+            htmlUrl: record.htmlUrl,
+            query,
+            total_matches: result.totalMatches,
+            returned: result.hits.length,
+            truncated: result.totalMatches > result.hits.length,
+            hits: result.hits,
+          }),
+        });
+      }
+    } else if (tc.function.name === FIND_CASE_LAW_TOOL_NAMES.readDocument) {
+      const uri = typeof args.uri === "string" ? args.uri.trim() : "";
+      const offset =
+        typeof args.offset === "number" ? Math.max(0, Math.floor(args.offset)) : 0;
+      const maxChars =
+        typeof args.max_chars === "number"
+          ? Math.max(500, Math.min(50000, Math.floor(args.max_chars)))
+          : 8000;
+      write(
+        `data: ${JSON.stringify({ type: "find_case_law_read_document_start", uri })}\n\n`,
+      );
+
+      const record = uri
+        ? findCaseLawTurnState.documentsByUri.get(uri)
+        : undefined;
+      if (!record) {
+        const error =
+          "Judgment has not been fetched in this turn. Call find_case_law_get_document first.";
+        const event: FindCaseLawToolEvent = {
+          type: "find_case_law_read_document",
+          uri: uri || null,
+          char_count: 0,
+          error,
+        };
+        write(`data: ${JSON.stringify(event)}\n\n`);
+        findCaseLawEvents.push(event);
+        toolResults.push({
+          role: "tool",
+          tool_call_id: tc.id,
+          content: JSON.stringify({ ok: false, uri: uri || null, error }),
+        });
+      } else {
+        const chunk = record.text.slice(offset, offset + maxChars);
+        const event: FindCaseLawToolEvent = {
+          type: "find_case_law_read_document",
+          uri,
+          title: record.title,
+          char_count: chunk.length,
+        };
+        write(`data: ${JSON.stringify(event)}\n\n`);
+        findCaseLawEvents.push(event);
+        toolResults.push({
+          role: "tool",
+          tool_call_id: tc.id,
+          content: JSON.stringify({
+            ok: true,
+            uri,
+            title: record.title,
+            htmlUrl: record.htmlUrl,
+            offset,
+            char_count: chunk.length,
+            total_char_count: record.text.length,
+            truncated: offset + maxChars < record.text.length,
+            text: chunk,
+          }),
+        });
+      }
     } else if (tc.function.name === COMPANIES_HOUSE_TOOL_NAMES.getCompany) {
       const companyNumber =
         typeof args.companyNumber === "string" ? args.companyNumber : "";
@@ -4135,6 +4417,7 @@ return {
     mcpEvents,
     companiesHouseEvents,
     legislationEvents,
+    findCaseLawEvents,
   };
 }
 
@@ -4361,6 +4644,7 @@ type AssistantEvent =
   | CourtlistenerToolEvent
   | CompaniesHouseToolEvent
   | LegislationToolEvent
+  | FindCaseLawToolEvent
   | McpToolEvent
   | { type: "case_opinions"; cluster_id: number; case: unknown }
   | { type: "content"; text: string }
@@ -4450,6 +4734,7 @@ const baseTools = [
     ...researchTools,
     ...COMPANIES_HOUSE_TOOLS,
     ...LEGISLATION_TOOLS,
+    ...FIND_CASE_LAW_TOOLS,
     ...WORKFLOW_TOOLS,
   ];
   const activeTools = extraTools?.length
@@ -4479,6 +4764,9 @@ const baseTools = [
       casesByClusterId: new Map(),
     };
   const legislationTurnState: LegislationTurnState = {
+    documentsByUri: new Map(),
+  };
+  const findCaseLawTurnState: FindCaseLawTurnState = {
     documentsByUri: new Map(),
   };
   let fullText = "";
@@ -4663,6 +4951,7 @@ const baseTools = [
           mcpEvents,
           companiesHouseEvents,
           legislationEvents,
+          findCaseLawEvents,
         } = await runToolCalls(
           toolCalls,
           docStore,
@@ -4677,6 +4966,7 @@ const baseTools = [
         courtlistenerTurnState,
         apiKeys,
         legislationTurnState,
+        findCaseLawTurnState,
       );
         throwIfAborted(signal);
         for (const r of docsRead) {
@@ -4743,6 +5033,9 @@ const baseTools = [
           events.push(event);
         }
         for (const event of legislationEvents) {
+          events.push(event);
+        }
+        for (const event of findCaseLawEvents) {
           events.push(event);
         }
 
