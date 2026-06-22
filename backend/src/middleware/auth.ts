@@ -126,7 +126,7 @@ res.locals.userId = data.user.id;
   // Fire-and-forget audit log for every authenticated request
 const fullPath = req.originalUrl.split("?")[0];
   const action = inferAuditAction(req.method, fullPath);
-  console.log("[audit] path check", { fullPath, method: req.method, action });
+  
   if (action) {
     writeAuditLog({
       userId: data.user.id,
