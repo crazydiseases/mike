@@ -15,24 +15,34 @@ const ebGaramond = EB_Garamond({
 });
 
 export const metadata: Metadata = {
-    metadataBase: new URL("https://app.mikeoss.com"),
-    title: "Mike - AI Legal Platform",
+    metadataBase: new URL("https://mike.cornishlaw.co.uk"),
+    title: "Mike - AI Legal Assistant",
     description:
-        "AI-powered legal document analysis and contract review platform.",
+        "AI-powered legal research and document analysis for Stutt Associates.",
+    manifest: "/manifest.json",
+    appleWebApp: {
+        capable: true,
+        statusBarStyle: "default",
+        title: "Mike",
+    },
     icons: {
         icon: [
-            { url: "/icon.svg", type: "image/svg+xml" },
-            { url: "/favicon.ico" },
+            { url: "/icons/favicon-32x32.png", sizes: "32x32", type: "image/png" },
+            { url: "/icons/icon-192x192.png", sizes: "192x192", type: "image/png" },
         ],
-        apple: "/apple-touch-icon.png",
+        apple: [
+            { url: "/icons/apple-touch-icon.png", sizes: "180x180", type: "image/png" },
+            { url: "/icons/icon-167x167.png", sizes: "167x167", type: "image/png" },
+            { url: "/icons/icon-152x152.png", sizes: "152x152", type: "image/png" },
+        ],
     },
     openGraph: {
         type: "website",
-        url: "https://app.mikeoss.com",
+        url: "https://mike.cornishlaw.co.uk",
         siteName: "Mike",
-        title: "Mike - AI Legal Platform",
+        title: "Mike - AI Legal Assistant",
         description:
-            "AI-powered legal document analysis and contract review platform.",
+            "AI-powered legal research and document analysis for Stutt Associates.",
         images: [
             {
                 url: "/link-image.jpg",
@@ -44,13 +54,12 @@ export const metadata: Metadata = {
     },
     twitter: {
         card: "summary_large_image",
-        title: "Mike - AI Legal Platform",
+        title: "Mike - AI Legal Assistant",
         description:
-            "AI-powered legal document analysis and contract review platform.",
+            "AI-powered legal research and document analysis for Stutt Associates.",
         images: ["/link-image.jpg"],
     },
 };
-
 export default function RootLayout({
     children,
 }: Readonly<{
