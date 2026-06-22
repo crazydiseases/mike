@@ -124,20 +124,20 @@ res.locals.userId = data.user.id;
   }
 
   // Fire-and-forget audit log for every authenticated request
-  const action = inferAuditAction(req.method, req.path);
-  console.log("[audit] middleware reached", { action, path: req.path, method: req.method, userId: data.user.id });
+const fullPath = req.originalUrl.split("?")[0];
+  const action = inferAuditAction(req.method, fullPath);
   if (action) {
     writeAuditLog({
       userId: data.user.id,
       action,
-      resourceId: extractResourceId(req.path),
-      resourceType: inferResourceType(req.path) ?? undefined,
+      resourceId: extractResourceId(fullPath),
+      resourceType: inferResourceType(fullPath) ?? undefined,
       ipAddress: getClientIp(req),
       userAgent: getUserAgent(req),
       sessionId: token.slice(-8),
       metadata: {
         method: req.method,
-        path: req.path,
+        path: fullPath,
       },
     }).catch(() => {/* never block the request */});
   }
