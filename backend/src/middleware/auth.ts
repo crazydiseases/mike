@@ -139,7 +139,7 @@ const fullPath = req.originalUrl.split("?")[0];
         method: req.method,
         path: fullPath,
       },
-    }).catch(() => {/* never block the request */});
+    }).catch((err) => { console.log("[audit] write failed", err instanceof Error ? err.message : String(err)); });
   }
 
   next();
