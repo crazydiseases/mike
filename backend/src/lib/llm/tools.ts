@@ -51,13 +51,39 @@ export function toGeminiTools(tools: OpenAIToolSchema[]): GeminiFunctionDeclarat
 // of edge cases: `integer` is accepted by both, but we make sure arrays have
 // `items` and objects have `properties` so Gemini doesn't error.
 
+// Fields that Gemini's API rejects but OpenAI/Anthropic accept fine.
+const GEMINI_UNSUPPORTED_SCHEMA_FIELDS = new Set([
+    "examples",
+    "additionalProperties",
+    "exclusiveMinimum",
+    "exclusiveMaximum",
+    "$schema",
+    "default",
+    "contentEncoding",
+    "contentMediaType",
+    "if",
+    "then",
+    "else",
+    "allOf",
+    "anyOf",
+    "oneOf",
+    "not",
+]);
+
 function normalizeSchema(schema: unknown): Record<string, unknown> {
     if (!schema || typeof schema !== "object") {
         return { type: "object", properties: {} };
     }
     const s = schema as Record<string, unknown>;
     const type = s.type;
-    const out: Record<string, unknown> = { ...s };
+
+    // Strip Gemini-unsupported fields before spreading
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(s)) {
+        if (!GEMINI_UNSUPPORTED_SCHEMA_FIELDS.has(k)) {
+            out[k] = v;
+        }
+    }
 
     if (type === "object") {
         const props = (s.properties as Record<string, unknown>) ?? {};
