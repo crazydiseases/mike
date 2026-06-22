@@ -115,13 +115,75 @@ export async function requireAuth(
     return;
   }
 
-  res.locals.userId = data.user.id;
+res.locals.userId = data.user.id;
   res.locals.userEmail = data.user.email?.toLowerCase() ?? "";
   res.locals.token = token;
   if (!(await enforceLoginMfaIfEnabled(req, res, admin, token))) {
     return;
   }
+
+  // Fire-and-forget audit log for every authenticated request
+  const { writeAuditLog, getClientIp, getUserAgent } = await import("../lib/auditLog");
+  const action = inferAuditAction(req.method, req.path);
+  if (action) {
+    writeAuditLog({
+      userId: data.user.id,
+      action,
+      resourceId: extractResourceId(req.path),
+      resourceType: inferResourceType(req.path),
+      ipAddress: getClientIp(req),
+      userAgent: getUserAgent(req),
+      sessionId: token.slice(-8),
+      metadata: {
+        method: req.method,
+        path: req.path,
+      },
+    }).catch(() => {/* never block the request */});
+  }
+
   next();
+}
+
+function inferAuditAction(method: string, path: string): import("../lib/auditLog").AuditAction | null {
+  if (path.startsWith("/chat") && method === "POST" && path.endsWith("/chat")) return "chat.create";
+  if (path.startsWith("/chat") && method === "POST") return "chat.message";
+  if (path.startsWith("/chat") && method === "DELETE") return "chat.delete";
+  if (path.includes("/export")) return "chat.export";
+  if (path.startsWith("/single-documents") && method === "POST") return "document.upload";
+  if (path.startsWith("/single-documents") && method === "GET") return "document.access";
+  if (path.startsWith("/download")) return "document.download";
+  if (path.includes("/documents") && method === "DELETE") return "document.delete";
+  if (path.startsWith("/projects") && method === "POST" && path.endsWith("/projects")) return "project.create";
+  if (path.startsWith("/projects") && method === "GET") return "project.access";
+  if (path.startsWith("/projects") && method === "DELETE") return "project.delete";
+  if (path.startsWith("/user/account") && method === "DELETE") return "account.delete";
+  if (path.includes("/api-keys") && method === "DELETE") return "api_key.delete";
+  if (path.includes("/api-keys")) return "api_key.set";
+  if (path.startsWith("/user")) return "settings.change";
+  if (path.startsWith("/workflows") && method === "POST") return "workflow.create";
+  if (path.startsWith("/workflows") && method === "GET") return "workflow.access";
+  if (path.startsWith("/workflows") && method === "DELETE") return "workflow.delete";
+  if (path.startsWith("/tabular-review") && method === "POST") return "tabular.create";
+  if (path.startsWith("/tabular-review") && method === "GET") return "tabular.access";
+  return null;
+}
+
+function inferResourceType(path: string): import("../lib/auditLog").AuditResourceType | null {
+  if (path.startsWith("/chat")) return "chat";
+  if (path.startsWith("/single-documents") || path.startsWith("/download")) return "document";
+  if (path.startsWith("/projects")) return "project";
+  if (path.startsWith("/user") || path.startsWith("/users")) return "user";
+  if (path.startsWith("/workflows")) return "workflow";
+  if (path.startsWith("/tabular-review")) return "tabular_review";
+  return null;
+}
+
+function extractResourceId(path: string): string | null {
+  // Extract UUIDs from paths like /chat/abc-123 or /projects/xyz/documents/456
+  const match = path.match(
+    /\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i
+  );
+  return match?.[1] ?? null;
 }
 
 export async function requireMfaIfEnrolled(
