@@ -77,9 +77,9 @@ export async function writeAuditLog(params: {
     });
 
     if (error) {
-      console.log("[audit] insert failed", { error: error.message, code: error.code });
+      devLog("[audit] insert failed", { error: error.message, code: error.code });
     } else {
-      console.log("[audit] logged", {
+      devLog("[audit] logged", {
         userId: params.userId,
         action: params.action,
         resourceType: params.resourceType,
