@@ -125,6 +125,7 @@ res.locals.userId = data.user.id;
 
   // Fire-and-forget audit log for every authenticated request
   const action = inferAuditAction(req.method, req.path);
+  console.log("[audit] middleware reached", { action, path: req.path, method: req.method, userId: data.user.id });
   if (action) {
     writeAuditLog({
       userId: data.user.id,
