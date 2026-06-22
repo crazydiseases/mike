@@ -64,7 +64,7 @@ export async function writeAuditLog(params: {
       auth: { persistSession: false },
     });
 
-    console.log("[audit] attempting insert", { userId: params.userId, action: params.action });
+    
     const { error } = await admin.from("audit_log").insert({
       user_id: params.userId,
       action_type: params.action,
