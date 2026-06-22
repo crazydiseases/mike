@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from "express";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { writeAuditLog, getClientIp, getUserAgent } from "../lib/auditLog";
 
 const isDev = process.env.NODE_ENV !== "production";
 const devLog = (...args: Parameters<typeof console.log>) => {
@@ -123,7 +124,6 @@ res.locals.userId = data.user.id;
   }
 
   // Fire-and-forget audit log for every authenticated request
-  const { writeAuditLog, getClientIp, getUserAgent } = await import("../lib/auditLog");
   const action = inferAuditAction(req.method, req.path);
   if (action) {
     writeAuditLog({
