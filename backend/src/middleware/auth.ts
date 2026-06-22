@@ -129,8 +129,8 @@ res.locals.userId = data.user.id;
     writeAuditLog({
       userId: data.user.id,
       action,
-      resourceId: extractResourceId(req.path),
-      resourceType: inferResourceType(req.path),
+      Id: extractResourceId(req.path),
+      resourceType: inferResourceType(req.path) ?? undefined,
       ipAddress: getClientIp(req),
       userAgent: getUserAgent(req),
       sessionId: token.slice(-8),
