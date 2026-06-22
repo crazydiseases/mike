@@ -113,7 +113,18 @@ app.use(
 
 app.use(
   cors({
-    origin: process.env.FRONTEND_URL ?? "http://localhost:3000",
+    origin: (origin, callback) => {
+      const allowed = [
+        process.env.FRONTEND_URL ?? "http://localhost:3000",
+        "https://mike.cornishlaw.co.uk",
+        "https://mike-frontend-production-0ff0.up.railway.app",
+      ].filter(Boolean);
+      if (!origin || allowed.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error(`CORS: origin ${origin} not allowed`));
+      }
+    },
     credentials: true,
   }),
 );
