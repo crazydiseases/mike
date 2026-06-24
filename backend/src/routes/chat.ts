@@ -561,6 +561,13 @@ chatRouter.post("/", requireAuth, async (req, res) => {
     res.setHeader("X-Accel-Buffering", "no");
     res.flushHeaders();
 
+// Keepalive ping every 30 seconds to prevent Railway's 5-minute proxy timeout
+    const keepAlive = setInterval(() => {
+      if (!res.writableEnded) {
+        res.write(": ping\n\n");
+      }
+    }, 30_000);
+    
     const write = (line: string) => res.write(line);
     const streamAbort = new AbortController();
     let streamFinished = false;
@@ -666,6 +673,7 @@ chatRouter.post("/", requireAuth, async (req, res) => {
         }
     } finally {
         streamFinished = true;
+        clearInterval(keepAlive);
         res.end();
     }
 });
