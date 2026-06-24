@@ -161,6 +161,9 @@ projectChatRouter.post("/", requireAuth, async (req, res) => {
     res.setHeader("Cache-Control", "no-cache");
     res.setHeader("Connection", "keep-alive");
     res.setHeader("X-Accel-Buffering", "no");
+    res.setHeader("X-Accel-Buffering", "no");
+    res.socket?.setTimeout(0);
+    res.setTimeout(0);
     res.flushHeaders();
 
     const write = (line: string) => res.write(line);
