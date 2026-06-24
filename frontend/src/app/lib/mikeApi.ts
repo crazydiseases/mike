@@ -873,6 +873,8 @@ export async function streamProjectChat(payload: {
         headers: {
             "Content-Type": "application/json",
             Accept: "text/event-stream",
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
             ...authHeaders,
         },
         body: JSON.stringify(body),
