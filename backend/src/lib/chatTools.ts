@@ -4403,7 +4403,6 @@ type AssistantEvent =
   | CaseCitationEvent
   | CourtlistenerToolEvent
   | CompaniesHouseToolEvent
-  | 
   | FindCaseLawToolEvent
   | PlanningDataToolEvent
   | McpToolEvent
