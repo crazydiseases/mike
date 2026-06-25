@@ -12,17 +12,8 @@ export const PLANNING_DATA_TOOL_NAMES = {
 } as const;
 
 export const PLANNING_DATA_SYSTEM_PROMPT = `ENGLAND PLANNING CONSTRAINTS (planning.data.gov.uk):
-Use this when answering questions about planning constraints affecting a specific property or site in England — e.g. whether it is in a conservation area, is a listed building, falls within an Article 4 direction, a Tree Preservation Order zone, a flood risk zone, green belt, or other designations. This is sourced from the official MHCLG Planning Data platform.
-
-Workflow:
-- Call planning_data_search with either a postcode, or a latitude/longitude pair.
-- By default it checks the most common constraint types (conservation area, listed building, Article 4 direction, tree preservation zone, flood risk zone, green belt, brownfield land, scheduled monument). Pass specific dataset names if the user asks about something else.
-
-Important limitations:
-- Coverage varies by local authority — an empty result for a dataset does NOT necessarily mean no constraint exists, only that this platform has no data for it. Say this explicitly when reporting an empty/clear result.
-- This does NOT include live/individual planning application status or history — for a specific application, direct the user to the relevant council's own planning register.
-- This is a beta government service; treat results as a useful indicator requiring verification, not a substitute for an official local land charges search or formal planning history check.`;
-
+Use planning_data_search (postcode or lat/long) to check constraints: conservation area, listed building, Article 4 direction, TPO zone, flood risk, green belt, brownfield land, scheduled monument.
+Limits: coverage varies by council — empty result does not mean no constraint exists, say so explicitly. Does not include live planning applications — direct users to their council's planning register for those. Beta service: treat as indicator only, not a substitute for a local land charges search.`;
 export const PLANNING_DATA_TOOLS = [
     {
         type: "function",
