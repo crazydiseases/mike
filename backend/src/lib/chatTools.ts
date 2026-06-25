@@ -4495,7 +4495,6 @@ const baseTools = [
     ...TOOLS,
     ...researchTools,
     ...COMPANIES_HOUSE_TOOLS,
-    ...LEGISLATION_TOOLS,
     ...FIND_CASE_LAW_TOOLS,
     ...PLANNING_DATA_TOOLS,
     ...WORKFLOW_TOOLS,
@@ -4711,7 +4710,6 @@ const baseTools = [
           caseCitationEvents,
           mcpEvents,
           companiesHouseEvents,
-          legislationEvents,
           findCaseLawEvents,
           planningDataEvents,
         } = await runToolCalls(
