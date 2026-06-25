@@ -41,8 +41,6 @@ import {
   type CompaniesHouseToolEvent,
 } from "./legalSourcesTools/companiesHouseTools";
 import {
-  
-import {
   searchFindCaseLaw,
   getFindCaseLawDocument,
 } from "./findCaseLaw";
