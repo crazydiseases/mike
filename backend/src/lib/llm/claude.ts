@@ -127,13 +127,30 @@ export async function streamClaude(
   try {
     for (let iter = 0; iter < maxIter; iter++) {
       throwIfAborted(params.abortSignal);
+      // Cache the system prompt and tool schemas — pays 1.25x on first
+      // request, then only 0.1x on every subsequent request within 5 minutes.
+      const cachedSystem: Anthropic.TextBlockParam[] = [
+        {
+          type: "text",
+          text: systemPrompt,
+          cache_control: { type: "ephemeral" },
+        },
+      ];
+
+      const cachedTools =
+        claudeTools.length
+          ? claudeTools.map((tool, index) =>
+              index === claudeTools.length - 1
+                ? { ...tool, cache_control: { type: "ephemeral" } }
+                : tool,
+            )
+          : undefined;
+
       const stream = anthropic.messages.stream({
         model,
-        system: systemPrompt,
+        system: cachedSystem,
         messages: messages as Anthropic.MessageParam[],
-        tools: claudeTools.length
-          ? (claudeTools as unknown as Tool[])
-          : undefined,
+        tools: cachedTools as unknown as Tool[] | undefined,
         max_tokens: MAX_TOKENS,
         // Claude 4.x models require `thinking.type: "adaptive"` and
         // drive effort via `output_config.effort` rather than a fixed
