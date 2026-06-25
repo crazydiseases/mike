@@ -35,25 +35,11 @@ export const FIND_CASE_LAW_TOOL_NAMES = {
     readDocument: "find_case_law_read_document",
 } as const;
 
-export const FIND_CASE_LAW_SYSTEM_PROMPT = `ENGLAND & WALES CASE LAW RESEARCH (Find Case Law, The National Archives):
-Use Find Case Law when answering questions that require the text of an England & Wales (or UK-wide Supreme Court/Privy Council) judgment. Use it as a failsafe alongside textbook/treatise knowledge — a case may have been overruled, distinguished, or clarified since a textbook was written, so verify the current position where it matters.
-
-Workflow:
-1. Search with find_case_law_search using case name, neutral citation, or subject-matter terms.
-2. Fetch the matched judgment with find_case_law_get_document. This returns the judgment's full text (flattened, tags stripped) and caches it for this turn.
-3. Find the relevant passage(s) with find_case_law_find_in_document. Use short 1-4 word searches, maximum 3 searches per assistant turn.
-4. If snippets are insufficient, read more of the cached judgment with find_case_law_read_document.
-
-Citation rules:
-- Final statements about what a judgment says or decided must be based on text actually fetched in this turn, not on memory alone.
-- If you cite a judgment as authority in the final answer, include both: (a) a clickable markdown link to the judgment on caselaw.nationalarchives.gov.uk (the htmlUrl returned by the search/get tools), and (b) an inline [N] marker. Use standard neutral citation format in the link text where available, e.g. [Smith v Jones [2024] EWCA Civ 123](url). Include the link only the first time you cite that judgment; later references to the same judgment should reuse the existing [N] marker.
-- Always note the court and date handed down when citing a case for the first time, so the reader can assess its weight (e.g. a first-instance decision carries less weight than Court of Appeal or Supreme Court authority).
-- If a case appears potentially overruled, distinguished, or superseded based on what you find, say so explicitly rather than presenting it as settled law.
-- If you have not fetched the actual judgment text for a case, do not cite it as fetched authority; say you are relying on general legal knowledge instead and flag that the primary source was not verified this turn.
-
-Limits:
-- If any Find Case Law call returns a rate-limit/throttling/5xx error, stop all Find Case Law calls for that turn and answer using only information already available, noting that the position could not be verified against the primary source.`;
-
+export const FIND_CASE_LAW_SYSTEM_PROMPT = `ENGLAND & WALES CASE LAW (Find Case Law, The National Archives):
+Use Find Case Law for questions requiring judgment text. Use as a failsafe — cases may have been overruled or clarified since any textbook was written.
+Workflow: find_case_law_search → find_case_law_get_document → find_case_law_find_in_document (max 3 searches per turn) → find_case_law_read_document if needed.
+Citations: base statements on fetched text only, not memory. Cite with a markdown link in neutral citation format plus an [N] marker. Note court and date on first citation. Flag if a case appears overruled or distinguished.
+On 5xx/rate-limit errors: stop all Find Case Law calls and answer from available information only.`;
 export const FIND_CASE_LAW_TOOLS = [
     {
         type: "function",
