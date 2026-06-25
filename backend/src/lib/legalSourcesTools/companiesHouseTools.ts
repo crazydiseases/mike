@@ -21,23 +21,11 @@ export const COMPANIES_HOUSE_TOOL_NAMES = {
 } as const;
 
 export const COMPANIES_HOUSE_SYSTEM_PROMPT = `UK COMPANY RESEARCH (Companies House):
-Use Companies House when answering questions about a UK company's officers, ownership, status, or filing history.
-
-Workflow:
-1. If you only have a company name, call companies_house_search to find the company number.
-2. Call companies_house_get_company with the company number to fetch a full structured review: company profile, officers (each with their other directorships), persons with significant control, and filing history.
-
-When presenting results, give both the factual data and a plain-language risk narrative covering:
-- Unusual officer movement: multiple resignations/appointments in a short period, especially clustered close together.
-- Filing health: gaps, overdue filings, or a dissolved/liquidation/administration status.
-- Cross-directorships: officers who hold appointments across an unusually large number of companies, or whose other companies show problematic statuses.
-- Any apparent mismatch between the officers list and the persons-with-significant-control list.
-
-Hard limits, do not violate:
-- Companies House only ever discloses an officer's month and year of birth, never the full date. Do not imply you have or could obtain a full date of birth.
-- The API does not provide structured financial figures (turnover, balance sheet values, etc.) — only the filing history of accounts documents. Never state or estimate specific financial figures; you may only note when accounts were filed and of what type.
-- Present the risk narrative as analysis and pattern-flagging for the user's own judgement, not as a definitive legal or financial conclusion.`;
-
+Use Companies House for questions about a UK company's officers, ownership, status, or filing history.
+1. If you only have a name, call companies_house_search first to get the company number.
+2. Call companies_house_get_company for the full review: profile, officers (with other directorships), persons with significant control, and filing history.
+Flag: unusual officer movement, filing gaps or overdue accounts, dissolved/administration status, cross-directorships with problematic companies, mismatches between officers and PSC list.
+Limits: never state a full date of birth (only month/year disclosed); never state financial figures (only filing history available); present findings as analysis for the user's judgement, not legal conclusions.`;
 export const COMPANIES_HOUSE_TOOLS = [
     {
         type: "function",
