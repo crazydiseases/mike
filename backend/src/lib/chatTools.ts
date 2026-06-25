@@ -3222,7 +3222,6 @@ export async function runToolCalls(
           content: JSON.stringify({ error: event.error }),
         });
       }
-    } else if (tc.function.name === 
     } else if (tc.function.name === FIND_CASE_LAW_TOOL_NAMES.search) {
       const query = typeof args.query === "string" ? args.query : "";
       write(
